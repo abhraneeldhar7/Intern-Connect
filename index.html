@@ -20,6 +20,15 @@
       .animate-fade-in {
         animation: fade-in 0.5s ease-out forwards;
       }
+      .animate-gradient {
+        background-size: 200% auto;
+        animation: gradient 4s linear infinite;
+      }
+      @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
       .glass-nav {
         background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(12px);
@@ -47,5 +56,6 @@
 </head>
   <body class="bg-white text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-700">
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>

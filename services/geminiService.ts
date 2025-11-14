@@ -1,8 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
 // Note: In a real production app, this key should come from a secure backend proxy.
-// Since this is a client-side demo, we assume the env var is available or handle the missing key gracefully.
-const apiKey = process.env.API_KEY || '';
+// We safely check for process.env to avoid runtime crashes in browsers where 'process' is undefined.
+const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
 
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
