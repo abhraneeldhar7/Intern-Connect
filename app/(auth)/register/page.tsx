@@ -76,7 +76,8 @@ export default function RegisterPage() {
       });
 
       if (signInResult?.ok) {
-        router.push('/dashboard/applicant');
+        // Redirect applicants to internships page after registration
+        router.push('/internships');
         router.refresh();
       } else {
         router.push('/login');

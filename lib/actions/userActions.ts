@@ -3,8 +3,9 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
+import { ObjectId } from 'mongodb';
 import connectDB from '../db';
-import User from '../models/User';
+import type { IUser } from '../models/User';
 import { auth } from '@/lib/auth';
 
 export interface ActionResult<T = any> {
@@ -20,29 +21,33 @@ export async function registerUser(
   role: 'admin' | 'applicant' = 'applicant'
 ): Promise<ActionResult> {
   try {
-    await connectDB();
+    const { db } = await connectDB();
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await db.collection('users').findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return { success: false, error: 'User with this email already exists' };
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
+    const now = new Date();
 
-    const user = await User.create({
+    const result = await db.collection('users').insertOne({
       name,
       email: email.toLowerCase(),
       password: hashedPassword,
       role,
+      bookmarks: [],
+      createdAt: now,
+      updatedAt: now,
     });
 
     return {
       success: true,
       data: {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        role: user.role,
+        id: result.insertedId.toString(),
+        name,
+        email: email.toLowerCase(),
+        role,
       },
     };
   } catch (error: any) {
@@ -58,8 +63,11 @@ export async function getCurrentUser(): Promise<ActionResult> {
       return { success: false, error: 'Not authenticated' };
     }
 
-    await connectDB();
-    const user = await User.findById((session.user as any).id).select('-password');
+    const { db } = await connectDB();
+    const user = await db.collection('users').findOne(
+      { _id: new ObjectId((session.user as any).id) },
+      { projection: { password: 0 } }
+    );
 
     if (!user) {
       return { success: false, error: 'User not found' };
@@ -90,24 +98,24 @@ export async function updateUserProfile(
       return { success: false, error: 'Not authenticated' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const updateData: any = { name };
+    const updateData: any = { name, updatedAt: new Date() };
     if (email && email !== session.user.email) {
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      const existingUser = await db.collection('users').findOne({ email: email.toLowerCase() });
       if (existingUser) {
         return { success: false, error: 'Email already in use' };
       }
       updateData.email = email.toLowerCase();
     }
 
-    const user = await User.findByIdAndUpdate(
-      (session.user as any).id,
-      updateData,
-      { new: true, runValidators: true }
-    ).select('-password');
+    const result = await db.collection('users').findOneAndUpdate(
+      { _id: new ObjectId((session.user as any).id) },
+      { $set: updateData },
+      { returnDocument: 'after', projection: { password: 0 } }
+    );
 
-    if (!user) {
+    if (!result) {
       return { success: false, error: 'User not found' };
     }
 
@@ -115,10 +123,10 @@ export async function updateUserProfile(
     return {
       success: true,
       data: {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        role: user.role,
+        id: result._id.toString(),
+        name: result.name,
+        email: result.email,
+        role: result.role,
       },
     };
   } catch (error: any) {

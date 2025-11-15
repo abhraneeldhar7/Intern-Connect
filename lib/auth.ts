@@ -2,8 +2,6 @@ import NextAuth from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
-import connectDB from './db';
-import User from './models/User';
 
 export const authConfig: NextAuthConfig = {
   providers: [
@@ -18,9 +16,14 @@ export const authConfig: NextAuthConfig = {
           throw new Error('Please provide email and password');
         }
 
-        await connectDB();
+        // Use dynamic imports to avoid loading MongoDB in Edge Runtime
+        const { default: connectDB } = await import('./db');
 
-        const user = await User.findOne({ email: credentials.email.toLowerCase() });
+        const { db } = await connectDB();
+
+        const user = await db.collection('users').findOne({ 
+          email: credentials.email.toLowerCase() 
+        });
 
         if (!user) {
           throw new Error('Invalid email or password');

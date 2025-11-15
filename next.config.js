@@ -21,6 +21,18 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Ignore optional MongoDB dependencies that aren't needed
+      const webpack = require('webpack');
+      config.plugins.push(
+        new webpack.IgnorePlugin({
+          resourceRegExp: /^(aws4|mongodb-client-encryption|kerberos|@mongodb-js\/zstd|snappy|gcp-metadata|mongodb-connection-string-url)$/,
+        })
+      );
+    }
+    return config;
+  },
 };
 
 module.exports = nextConfig;

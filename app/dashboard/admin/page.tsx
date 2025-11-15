@@ -4,8 +4,6 @@ import AdminDashboardClient from './AdminDashboardClient';
 import { getAllInternships } from '@/lib/actions/internshipActions';
 import { adminGetAllApplications } from '@/lib/actions/applicationActions';
 import connectDB from '@/lib/db';
-import Internship from '@/lib/models/Internship';
-import Application from '@/lib/models/Application';
 
 export default async function AdminDashboardPage() {
   const session = await auth();
@@ -14,14 +12,14 @@ export default async function AdminDashboardPage() {
     redirect('/login');
   }
 
-  await connectDB();
+  const { db } = await connectDB();
 
   // Get stats
   const [totalInternships, totalApplications, acceptedApplications, rejectedApplications] = await Promise.all([
-    Internship.countDocuments(),
-    Application.countDocuments(),
-    Application.countDocuments({ status: 'accepted' }),
-    Application.countDocuments({ status: 'rejected' }),
+    db.collection('internships').countDocuments(),
+    db.collection('applications').countDocuments(),
+    db.collection('applications').countDocuments({ status: 'accepted' }),
+    db.collection('applications').countDocuments({ status: 'rejected' }),
   ]);
 
   const stats = {

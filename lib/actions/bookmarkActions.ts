@@ -1,8 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { ObjectId } from 'mongodb';
 import connectDB from '../db';
-import User from '../models/User';
 import { auth } from '@/lib/auth';
 import { ActionResult } from './userActions';
 
@@ -18,27 +18,39 @@ export async function toggleBookmark(internshipId: string): Promise<ActionResult
       return { success: false, error: 'Only applicants can bookmark internships' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const user = await User.findById((session.user as any).id);
+    const user = await db.collection('users').findOne({ _id: new ObjectId((session.user as any).id) });
     if (!user) {
       return { success: false, error: 'User not found' };
     }
 
-    const bookmarks = user.bookmarks || [];
-    const isBookmarked = bookmarks.some(
-      (id: any) => id.toString() === internshipId
-    );
+    const bookmarks = (user.bookmarks || []).map((id: any) => id.toString());
+    const isBookmarked = bookmarks.includes(internshipId);
 
     if (isBookmarked) {
-      user.bookmarks = bookmarks.filter(
-        (id: any) => id.toString() !== internshipId
+      await db.collection('users').updateOne(
+        { _id: new ObjectId((session.user as any).id) },
+        { 
+          $set: { 
+            bookmarks: bookmarks
+              .filter((id: string) => id !== internshipId)
+              .map((id: string) => new ObjectId(id)),
+            updatedAt: new Date()
+          } 
+        }
       );
     } else {
-      user.bookmarks = [...bookmarks, internshipId];
+      await db.collection('users').updateOne(
+        { _id: new ObjectId((session.user as any).id) },
+        { 
+          $set: { 
+            bookmarks: [...bookmarks.map((id: string) => new ObjectId(id)), new ObjectId(internshipId)],
+            updatedAt: new Date()
+          } 
+        }
+      );
     }
-
-    await user.save();
 
     revalidatePath('/internships');
     revalidatePath('/dashboard/applicant');
@@ -62,18 +74,22 @@ export async function getBookmarkedInternships(): Promise<ActionResult> {
       return { success: false, error: 'Not authenticated' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const user = await User.findById((session.user as any).id).populate('bookmarks');
+    const user = await db.collection('users').findOne({ _id: new ObjectId((session.user as any).id) });
     if (!user) {
       return { success: false, error: 'User not found' };
     }
 
-    const bookmarks = (user.bookmarks || []).map((internship: any) => ({
+    const bookmarkIds = (user.bookmarks || []).map((id: any) => new ObjectId(id));
+    const internships = await db.collection('internships')
+      .find({ _id: { $in: bookmarkIds } })
+      .toArray();
+
+    const bookmarks = internships.map((internship) => ({
       id: internship._id.toString(),
-      ...internship.toObject(),
+      ...internship,
       _id: undefined,
-      __v: undefined,
     }));
 
     return {
@@ -93,17 +109,15 @@ export async function isBookmarked(internshipId: string): Promise<ActionResult<b
       return { success: true, data: false };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const user = await User.findById((session.user as any).id);
+    const user = await db.collection('users').findOne({ _id: new ObjectId((session.user as any).id) });
     if (!user) {
       return { success: true, data: false };
     }
 
-    const bookmarks = user.bookmarks || [];
-    const isBookmarked = bookmarks.some(
-      (id: any) => id.toString() === internshipId
-    );
+    const bookmarks = (user.bookmarks || []).map((id: any) => id.toString());
+    const isBookmarked = bookmarks.includes(internshipId);
 
     return {
       success: true,

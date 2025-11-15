@@ -1,15 +1,14 @@
 import bcrypt from 'bcryptjs';
 import connectDB from '../lib/db';
-import User from '../lib/models/User';
 
 async function seedAdmin() {
   try {
     console.log('Connecting to database...');
-    await connectDB();
+    const { db } = await connectDB();
     console.log('Connected to database');
 
     // Check if admin already exists
-    const existingAdmin = await User.findOne({ email: 'admin@example.com' });
+    const existingAdmin = await db.collection('users').findOne({ email: 'admin@example.com' });
     if (existingAdmin) {
       console.log('Admin user already exists!');
       console.log('Email: admin@example.com');
@@ -24,12 +23,16 @@ async function seedAdmin() {
 
     console.log('Creating admin user...');
     const hashedPassword = await bcrypt.hash(adminPassword, 12);
+    const now = new Date();
 
-    const admin = await User.create({
+    const result = await db.collection('users').insertOne({
       name: adminName,
       email: adminEmail,
       password: hashedPassword,
       role: 'admin',
+      bookmarks: [],
+      createdAt: now,
+      updatedAt: now,
     });
 
     console.log('✅ Admin user created successfully!');

@@ -1,6 +1,7 @@
 "use server"
 // Ensure this file only runs in Node.js runtime, not Edge Runtime
-import mongoose from 'mongoose';
+import 'server-only';
+import { MongoClient, Db } from 'mongodb';
 
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 
@@ -11,44 +12,44 @@ if (!MONGODB_URI) {
   throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
 }
 
-interface MongooseCache {
-  conn: typeof mongoose | null;
-  promise: Promise<typeof mongoose> | null;
+interface MongoCache {
+  client: MongoClient | null;
+  db: Db | null;
+  promise: Promise<{ client: MongoClient; db: Db }> | null;
 }
 
 declare global {
-  var mongoose: MongooseCache | undefined;
+  var mongo: MongoCache | undefined;
 }
 
-let cached: MongooseCache = global.mongoose || { conn: null, promise: null };
+let cached: MongoCache = global.mongo || { client: null, db: null, promise: null };
 
-if (!global.mongoose) {
-  global.mongoose = cached;
+if (!global.mongo) {
+  global.mongo = cached;
 }
 
-async function connectDB(): Promise<typeof mongoose> {
-  if (cached.conn) {
-    return cached.conn;
+async function connectDB(): Promise<{ client: MongoClient; db: Db }> {
+  if (cached.client && cached.db) {
+    return { client: cached.client, db: cached.db };
   }
 
   if (!cached.promise) {
-    const opts = {
-      bufferCommands: false,
-    };
-
-    cached.promise = mongoose.connect(MONGODB_URI as string, opts).then((mongoose) => {
-      return mongoose;
+    cached.promise = MongoClient.connect(MONGODB_URI as string).then((client) => {
+      const db = client.db();
+      return { client, db };
     });
   }
 
   try {
-    cached.conn = await cached.promise;
+    const { client, db } = await cached.promise;
+    cached.client = client;
+    cached.db = db;
   } catch (e) {
     cached.promise = null;
     throw e;
   }
 
-  return cached.conn;
+  return { client: cached.client!, db: cached.db! };
 }
 
 export default connectDB;

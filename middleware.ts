@@ -22,7 +22,7 @@ export default auth((req) => {
         return NextResponse.redirect(new URL('/dashboard/admin', req.url));
       }
       if (isApplicant) {
-        return NextResponse.redirect(new URL('/dashboard/applicant', req.url));
+        return NextResponse.redirect(new URL('/internships', req.url));
       }
     }
     return NextResponse.next();

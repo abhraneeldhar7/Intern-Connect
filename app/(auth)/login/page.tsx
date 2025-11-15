@@ -50,7 +50,8 @@ export default function LoginPage() {
         if (role === 'admin') {
           router.push('/dashboard/admin');
         } else {
-          router.push('/dashboard/applicant');
+          // Redirect applicants to internships page
+          router.push('/internships');
         }
         router.refresh();
       }

@@ -1,9 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { ObjectId } from 'mongodb';
 import connectDB from '../db';
-import Application from '../models/Application';
-import Internship from '../models/Internship';
+import type { IApplication } from '../models/Application';
 import { auth } from '@/lib/auth';
 import { ActionResult } from './userActions';
 
@@ -22,28 +22,33 @@ export async function submitApplication(
       return { success: false, error: 'Only applicants can submit applications' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const internship = await Internship.findById(internshipId);
+    const internship = await db.collection('internships').findOne({ _id: new ObjectId(internshipId) });
     if (!internship) {
       return { success: false, error: 'Internship not found' };
     }
 
-    const existingApplication = await Application.findOne({
-      internshipId,
-      userId: (session.user as any).id,
+    const existingApplication = await db.collection('applications').findOne({
+      internshipId: new ObjectId(internshipId),
+      userId: new ObjectId((session.user as any).id),
     });
 
     if (existingApplication) {
       return { success: false, error: 'You have already applied for this internship' };
     }
 
-    const application = await Application.create({
-      internshipId,
-      userId: (session.user as any).id,
+    const now = new Date();
+    const result = await db.collection('applications').insertOne({
+      internshipId: new ObjectId(internshipId),
+      userId: new ObjectId((session.user as any).id),
       resumeUrl,
       status: 'pending',
+      createdAt: now,
+      updatedAt: now,
     });
+
+    const application = await db.collection('applications').findOne({ _id: result.insertedId });
 
     revalidatePath('/dashboard/applicant');
     revalidatePath(`/internships/${internshipId}`);
@@ -51,8 +56,9 @@ export async function submitApplication(
     return {
       success: true,
       data: {
-        id: application._id.toString(),
-        ...application.toObject(),
+        id: application!._id.toString(),
+        ...application!,
+        _id: undefined,
       },
     };
   } catch (error: any) {
@@ -71,9 +77,9 @@ export async function withdrawApplication(id: string): Promise<ActionResult> {
       return { success: false, error: 'Not authenticated' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const application = await Application.findById(id);
+    const application = await db.collection('applications').findOne({ _id: new ObjectId(id) });
     if (!application) {
       return { success: false, error: 'Application not found' };
     }
@@ -86,7 +92,7 @@ export async function withdrawApplication(id: string): Promise<ActionResult> {
       return { success: false, error: 'Cannot withdraw a processed application' };
     }
 
-    await Application.findByIdAndDelete(id);
+    await db.collection('applications').deleteOne({ _id: new ObjectId(id) });
 
     revalidatePath('/dashboard/applicant');
 
@@ -104,23 +110,29 @@ export async function getMyApplications(): Promise<ActionResult> {
       return { success: false, error: 'Not authenticated' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const applications = await Application.find({
-      userId: (session.user as any).id,
-    })
-      .populate('internshipId')
+    const applications = await db.collection('applications')
+      .find({ userId: new ObjectId((session.user as any).id) })
       .sort({ createdAt: -1 })
-      .lean();
+      .toArray();
+
+    // Populate internshipId field
+    const applicationsWithInternships = await Promise.all(
+      applications.map(async (app) => {
+        const internship = await db.collection('internships').findOne({ _id: app.internshipId });
+        return {
+          id: app._id.toString(),
+          ...app,
+          internshipId: internship || app.internshipId,
+          _id: undefined,
+        };
+      })
+    );
 
     return {
       success: true,
-      data: applications.map((app) => ({
-        id: app._id.toString(),
-        ...app,
-        _id: undefined,
-        __v: undefined,
-      })),
+      data: applicationsWithInternships,
     };
   } catch (error: any) {
     console.error('Get my applications error:', error);
@@ -140,22 +152,38 @@ export async function adminGetAllApplications(): Promise<ActionResult> {
       return { success: false, error: 'Unauthorized. Admin access required.' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const applications = await Application.find({})
-      .populate('internshipId')
-      .populate('userId', 'name email')
+    const applications = await db.collection('applications')
+      .find({})
       .sort({ createdAt: -1 })
-      .lean();
+      .toArray();
+
+    // Populate internshipId and userId fields
+    const applicationsWithPopulated = await Promise.all(
+      applications.map(async (app) => {
+        const internship = await db.collection('internships').findOne({ _id: app.internshipId });
+        const user = await db.collection('users').findOne(
+          { _id: app.userId },
+          { projection: { name: 1, email: 1 } }
+        );
+        return {
+          id: app._id.toString(),
+          ...app,
+          internshipId: internship || app.internshipId,
+          userId: user ? {
+            _id: user._id.toString(),
+            name: user.name,
+            email: user.email,
+          } : app.userId,
+          _id: undefined,
+        };
+      })
+    );
 
     return {
       success: true,
-      data: applications.map((app) => ({
-        id: app._id.toString(),
-        ...app,
-        _id: undefined,
-        __v: undefined,
-      })),
+      data: applicationsWithPopulated,
     };
   } catch (error: any) {
     console.error('Admin get all applications error:', error);
@@ -178,14 +206,18 @@ export async function updateApplicationStatus(
       return { success: false, error: 'Unauthorized. Admin access required.' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const application = await Application.findById(id).populate('internshipId');
+    const application = await db.collection('applications').findOne({ _id: new ObjectId(id) });
     if (!application) {
       return { success: false, error: 'Application not found' };
     }
 
-    const internship = application.internshipId as any;
+    const internship = await db.collection('internships').findOne({ _id: application.internshipId });
+    if (!internship) {
+      return { success: false, error: 'Internship not found' };
+    }
+
     if (internship.createdBy.toString() !== (session.user as any).id) {
       return {
         success: false,
@@ -193,14 +225,18 @@ export async function updateApplicationStatus(
       };
     }
 
-    const updated = await Application.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true, runValidators: true }
-    )
-      .populate('internshipId')
-      .populate('userId', 'name email')
-      .lean();
+    const updated = await db.collection('applications').findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: { status, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+
+    // Populate internshipId and userId
+    const populatedInternship = await db.collection('internships').findOne({ _id: updated!.internshipId });
+    const populatedUser = await db.collection('users').findOne(
+      { _id: updated!.userId },
+      { projection: { name: 1, email: 1 } }
+    );
 
     revalidatePath('/dashboard/admin');
 
@@ -209,8 +245,13 @@ export async function updateApplicationStatus(
       data: {
         id: updated!._id.toString(),
         ...updated!,
+        internshipId: populatedInternship || updated!.internshipId,
+        userId: populatedUser ? {
+          _id: populatedUser._id.toString(),
+          name: populatedUser.name,
+          email: populatedUser.email,
+        } : updated!.userId,
         _id: undefined,
-        __v: undefined,
       },
     };
   } catch (error: any) {

@@ -1,9 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { ObjectId } from 'mongodb';
 import connectDB from '../db';
-import Internship from '../models/Internship';
-import Application from '../models/Application';
+import type { IInternship } from '../models/Internship';
 import { auth } from '@/lib/auth';
 import { ActionResult } from './userActions';
 
@@ -30,12 +30,17 @@ export async function createInternship(data: InternshipInput): Promise<ActionRes
       return { success: false, error: 'Unauthorized. Admin access required.' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
+    const now = new Date();
 
-    const internship = await Internship.create({
+    const result = await db.collection('internships').insertOne({
       ...data,
-      createdBy: (session.user as any).id,
+      createdBy: new ObjectId((session.user as any).id),
+      createdAt: now,
+      updatedAt: now,
     });
+
+    const internship = await db.collection('internships').findOne({ _id: result.insertedId });
 
     revalidatePath('/dashboard/admin');
     revalidatePath('/internships');
@@ -43,8 +48,9 @@ export async function createInternship(data: InternshipInput): Promise<ActionRes
     return {
       success: true,
       data: {
-        id: internship._id.toString(),
-        ...internship.toObject(),
+        id: internship!._id.toString(),
+        ...internship,
+        _id: undefined,
       },
     };
   } catch (error: any) {
@@ -68,9 +74,9 @@ export async function updateInternship(
       return { success: false, error: 'Unauthorized. Admin access required.' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const internship = await Internship.findById(id);
+    const internship = await db.collection('internships').findOne({ _id: new ObjectId(id) });
     if (!internship) {
       return { success: false, error: 'Internship not found' };
     }
@@ -79,10 +85,11 @@ export async function updateInternship(
       return { success: false, error: 'Unauthorized. You can only edit your own internships.' };
     }
 
-    const updated = await Internship.findByIdAndUpdate(id, data, {
-      new: true,
-      runValidators: true,
-    });
+    const updated = await db.collection('internships').findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: { ...data, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
 
     revalidatePath('/dashboard/admin');
     revalidatePath(`/internships/${id}`);
@@ -91,7 +98,8 @@ export async function updateInternship(
       success: true,
       data: {
         id: updated!._id.toString(),
-        ...updated!.toObject(),
+        ...updated!,
+        _id: undefined,
       },
     };
   } catch (error: any) {
@@ -112,9 +120,9 @@ export async function deleteInternship(id: string): Promise<ActionResult> {
       return { success: false, error: 'Unauthorized. Admin access required.' };
     }
 
-    await connectDB();
+    const { db } = await connectDB();
 
-    const internship = await Internship.findById(id);
+    const internship = await db.collection('internships').findOne({ _id: new ObjectId(id) });
     if (!internship) {
       return { success: false, error: 'Internship not found' };
     }
@@ -123,8 +131,8 @@ export async function deleteInternship(id: string): Promise<ActionResult> {
       return { success: false, error: 'Unauthorized. You can only delete your own internships.' };
     }
 
-    await Application.deleteMany({ internshipId: id });
-    await Internship.findByIdAndDelete(id);
+    await db.collection('applications').deleteMany({ internshipId: new ObjectId(id) });
+    await db.collection('internships').deleteOne({ _id: new ObjectId(id) });
 
     revalidatePath('/dashboard/admin');
     revalidatePath('/internships');
@@ -144,7 +152,7 @@ export async function getAllInternships(filters?: {
   skills?: string[];
 }): Promise<ActionResult> {
   try {
-    await connectDB();
+    const { db } = await connectDB();
 
     let query: any = {};
 
@@ -172,19 +180,34 @@ export async function getAllInternships(filters?: {
       query.skills = { $in: filters.skills };
     }
 
-    const internships = await Internship.find(query)
-      .populate('createdBy', 'name email')
+    const internships = await db.collection('internships')
+      .find(query)
       .sort({ createdAt: -1 })
-      .lean();
+      .toArray();
+
+    // Populate createdBy field
+    const internshipsWithUsers = await Promise.all(
+      internships.map(async (internship) => {
+        const user = await db.collection('users').findOne(
+          { _id: internship.createdBy },
+          { projection: { name: 1, email: 1 } }
+        );
+        return {
+          id: internship._id.toString(),
+          ...internship,
+          createdBy: user ? {
+            _id: user._id.toString(),
+            name: user.name,
+            email: user.email,
+          } : internship.createdBy,
+          _id: undefined,
+        };
+      })
+    );
 
     return {
       success: true,
-      data: internships.map((internship) => ({
-        id: internship._id.toString(),
-        ...internship,
-        _id: undefined,
-        __v: undefined,
-      })),
+      data: internshipsWithUsers,
     };
   } catch (error: any) {
     console.error('Get all internships error:', error);
@@ -194,23 +217,31 @@ export async function getAllInternships(filters?: {
 
 export async function getInternshipById(id: string): Promise<ActionResult> {
   try {
-    await connectDB();
+    const { db } = await connectDB();
 
-    const internship = await Internship.findById(id)
-      .populate('createdBy', 'name email')
-      .lean();
+    const internship = await db.collection('internships').findOne({ _id: new ObjectId(id) });
 
     if (!internship) {
       return { success: false, error: 'Internship not found' };
     }
+
+    // Populate createdBy field
+    const user = await db.collection('users').findOne(
+      { _id: internship.createdBy },
+      { projection: { name: 1, email: 1 } }
+    );
 
     return {
       success: true,
       data: {
         id: internship._id.toString(),
         ...internship,
+        createdBy: user ? {
+          _id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+        } : internship.createdBy,
         _id: undefined,
-        __v: undefined,
       },
     };
   } catch (error: any) {
