@@ -1,3 +1,5 @@
+"use server"
+// Ensure this file only runs in Node.js runtime, not Edge Runtime
 import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;

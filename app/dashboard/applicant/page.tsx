@@ -14,10 +14,16 @@ export default async function ApplicantDashboardPage() {
   const internshipsResult = await getAllInternships();
   const applicationsResult = await getMyApplications();
 
+  const internships = internshipsResult.success ? internshipsResult.data || [] : [];
+  const applications = applicationsResult.success ? applicationsResult.data || [] : [];
+
+  const serializedInternships = JSON.parse(JSON.stringify(internships));
+  const serializedApplications = JSON.parse(JSON.stringify(applications));
+
   return (
     <ApplicantDashboardClient
-      internships={internshipsResult.success ? internshipsResult.data || [] : []}
-      applications={applicationsResult.success ? applicationsResult.data || [] : []}
+      internships={serializedInternships}
+      applications={serializedApplications}
     />
   );
 }

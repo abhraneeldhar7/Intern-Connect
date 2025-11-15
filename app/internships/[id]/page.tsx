@@ -28,9 +28,11 @@ export default async function InternshipDetailPage({ params }: { params: { id: s
     }
   }
 
+  const serializedInternship = JSON.parse(JSON.stringify(result.data));
+
   return (
     <InternshipDetailClient
-      internship={result.data}
+      internship={serializedInternship}
       hasApplied={hasApplied}
       applicationId={applicationId}
       isApplicant={session && (session.user as any)?.role === 'applicant'}

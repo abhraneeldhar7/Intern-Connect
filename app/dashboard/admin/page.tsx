@@ -36,11 +36,18 @@ export default async function AdminDashboardPage() {
   const internshipsResult = await getAllInternships();
   const applicationsResult = await adminGetAllApplications();
 
+  const internships = internshipsResult.success ? internshipsResult.data || [] : [];
+  const applications = applicationsResult.success ? applicationsResult.data || [] : [];
+
+  const serializedStats = JSON.parse(JSON.stringify(stats));
+  const serializedInternships = JSON.parse(JSON.stringify(internships));
+  const serializedApplications = JSON.parse(JSON.stringify(applications));
+
   return (
     <AdminDashboardClient
-      stats={stats}
-      internships={internshipsResult.success ? internshipsResult.data || [] : []}
-      applications={applicationsResult.success ? applicationsResult.data || [] : []}
+      stats={serializedStats}
+      internships={serializedInternships}
+      applications={serializedApplications}
     />
   );
 }
